@@ -12,7 +12,6 @@ if [ -d "benchmark/compare" ]; then
   echo "dir benchmark/compare exist"
   go test google.golang.org/grpc/benchmark/... -benchmem -bench=BenchmarkClient/Unary-Tracing-maxConcurrentCalls_64 | tee benchmark/compare/result1
   ls benchmark/compare/
-  cat benchmark/compare/result1
   git reset --hard ${commits[0]}
   ls benchmark/compare/
   if [ -d "benchmark/compare" ]; then
