@@ -17,7 +17,7 @@ if [ -d "benchmark/compare" ]; then
   ls benchmark/compare/
   if [ -d "benchmark/compare" ]; then
     echo "after reset: dir benchmark/compare exist"
-    go test google.golang.org/grpc/benchmark/... -benchmem -bench=BenchmarkClient/BenchmarkClient/Unary-Tracing-maxConcurrentCalls_64 | tee benchmark/compare/result2
+    go test google.golang.org/grpc/benchmark/... -benchmem -bench=BenchmarkClient/Unary-Tracing-maxConcurrentCalls_64 | tee benchmark/compare/result2
     ls
     go run benchmark/compare/main.go benchmark/compare/result1 benchmark/compare/result2
   fi
