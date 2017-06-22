@@ -11,4 +11,4 @@ before_install:
 
 script:
   - git branch
-  - ./benchmark/compare/run.sh
+  - ./benchmark/c/run.sh
