@@ -90,9 +90,9 @@ func compareTwoMap(m1, m2 map[string][]string) {
 				switch {
 				case i == 0:
 					changes = changes + combineString("\noperations", v1[i], v2[i], "")
-				case i >= 1 && i <= 5:
+				case i >= 1 && i <= 7:
 					changes = changes + combineString(v1[i+1], v1[i], v2[i], percentChange)
-				case i > 5:
+				case i > 7:
 					changes = changes + combineString(v1[i-1], v1[i]+v1[7], v2[i]+v2[7], percentChange)
 				}
 			}

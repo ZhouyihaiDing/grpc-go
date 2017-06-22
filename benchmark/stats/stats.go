@@ -113,7 +113,7 @@ func (stats *Stats) Print(w io.Writer) {
 
 	avg := float64(stats.histogram.Sum) / float64(stats.histogram.Count)
 	var percentToObserve = []int64{50, 90, 99, 100}
-	fmt.Fprintf(w, "Latency - unit: %s \n", fmt.Sprintf("%v", stats.unit)[1:])
+	fmt.Fprintf(w, "Latency - unit: %s count: %d\n", fmt.Sprintf("%v", stats.unit)[1:], stats.histogram.Count)
 	fmt.Fprintf(w, "  %s\n", strings.Repeat("-", 20))
 	for _, position := range percentToObserve {
 		fmt.Fprintf(w, "|   %*d%%   | %*d %s |\n", 3, position, 7,

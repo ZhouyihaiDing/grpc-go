@@ -222,8 +222,9 @@ func NewClientConn(addr string, opts ...grpc.DialOption) *grpc.ClientConn {
 	return conn
 }
 
-func runUnary(b *testing.B, maxConcurrentCalls, reqSize, respSize int) {
-	s := stats.AddStats(b, 38)
+func runUnary(b *testing.B, maxConcurrentCalls, reqSize, respSize int, s *stats.Stats) {
+	s.Clear()
+	b.ResetTimer()
 	b.StopTimer()
 	target, stopper := StartServer(ServerInfo{Addr: "localhost:0", Type: "protobuf"}, grpc.MaxConcurrentStreams(uint32(maxConcurrentCalls+1)))
 	defer stopper()
@@ -265,8 +266,9 @@ func runUnary(b *testing.B, maxConcurrentCalls, reqSize, respSize int) {
 	conn.Close()
 }
 
-func runStream(b *testing.B, maxConcurrentCalls, reqSize, respSize int) {
-	s := stats.AddStats(b, 38)
+func runStream(b *testing.B, maxConcurrentCalls, reqSize, respSize int, s *stats.Stats) {
+	s.Clear()
+	b.ResetTimer()
 	b.StopTimer()
 	target, stopper := StartServer(ServerInfo{Addr: "localhost:0", Type: "protobuf"}, grpc.MaxConcurrentStreams(uint32(maxConcurrentCalls+1)))
 	defer stopper()
