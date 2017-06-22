@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 echo $TRAVIS_GO_VERSION
-if [ $TRAVIS_GO_VERSION = 1.8* ]; then
+if [[ $TRAVIS_GO_VERSION = 1.8* ]]; then
   make testdeps
   sleep 1
   echo $TRAVIS_PULL_REQUEST
