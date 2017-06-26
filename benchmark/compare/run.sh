@@ -25,7 +25,7 @@ if [[ $TRAVIS_GO_VERSION = 1.8* ]]; then
     else
       mv benchmark/tmpstats benchmark/stats
       mv benchmark/tmp17test benchmark/benchmark17_test.go 
-      mv benchmark/compare/tmp benchmark/compare/main.go
+      mv benchmark/compare/tmpmain benchmark/compare/main.go
     fi
     go test google.golang.org/grpc/benchmark/... -benchmem -bench=BenchmarkClient/Tracing-kbps_0-MTU_0-maxConcurrentCalls_1 | tee benchmark/compare/result2
     go run benchmark/compare/main.go benchmark/compare/result1 benchmark/compare/result2
