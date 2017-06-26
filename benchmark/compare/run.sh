@@ -12,7 +12,7 @@ if [[ $TRAVIS_GO_VERSION = 1.8* ]]; then
     echo "dir benchmark/compare exist"
     go get -d -v -t google.golang.org/grpc/...
 
-    cp benchmark/compare/main.go tmpmain
+    cp benchmark/compare/main.go benchmark/compare/tmpmain
     cp -r benchmark/stats benchmark/tmpstats
     cp benchmark/benchmark17_test.go benchmark/tmp17test
 
