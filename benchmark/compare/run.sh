@@ -14,7 +14,7 @@ if [[ $TRAVIS_GO_VERSION = 1.8* ]]; then
 
     cp -r benchmark tmpbenchmark
 
-    go test google.golang.org/grpc/benchmark/... -benchmem -bench=BenchmarkClient/Unary-Tracing-kbps_0-MTU_0-maxConcurrentCalls_1 | tee result1
+    go test google.golang.org/grpc/benchmark/... -benchmem -bench=BenchmarkClient/Tracing-kbps_0-MTU_0-maxConcurrentCalls_1 | tee result1
     ls benchmark/compare/
     git reset --hard ${commits[0]}
     ls benchmark/compare/
