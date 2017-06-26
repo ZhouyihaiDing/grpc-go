@@ -21,6 +21,7 @@ if [[ $TRAVIS_GO_VERSION = 1.8* ]]; then
     if [ -e "benchmark/compare/main.go" ]; then
       echo "after reset: dir benchmark/compare exist"
     else
+      rm -r benchmark
       mv tmpbenchmark benchmark
     fi
     go test google.golang.org/grpc/benchmark/... -benchmem -bench=BenchmarkClient/Tracing-kbps_0-MTU_0-maxConcurrentCalls_1 | tee result2
