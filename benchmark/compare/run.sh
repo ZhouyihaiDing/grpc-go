@@ -10,6 +10,7 @@ echo ${commits[-1]}
 if [[ $TRAVIS_GO_VERSION = 1.8* ]]; then
   if [ -d "benchmark/compare" ]; then
     echo "dir benchmark/compare exist"
+    go get -d -v -t google.golang.org/grpc/...
     cp benchmark/compare/main.go tmp
     go test google.golang.org/grpc/benchmark/... -benchmem -bench=BenchmarkClient/Unary-Tracing-kbps_0-MTU_0-maxConcurrentCalls_1 | tee benchmark/compare/result1
     ls benchmark/compare/
