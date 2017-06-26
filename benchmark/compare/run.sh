@@ -11,7 +11,11 @@ if [[ $TRAVIS_GO_VERSION = 1.8* ]]; then
   if [ -d "benchmark/compare" ]; then
     echo "dir benchmark/compare exist"
     go get -d -v -t google.golang.org/grpc/...
-    cp benchmark/compare/main.go tmp
+
+    cp benchmark/compare/main.go tmpmain
+    cp -r benchmark/stats benchmark/tmpstats
+    cp benchmark/benchmark17_test.go benchmark/tmp17test
+
     go test google.golang.org/grpc/benchmark/... -benchmem -bench=BenchmarkClient/Unary-Tracing-kbps_0-MTU_0-maxConcurrentCalls_1 | tee benchmark/compare/result1
     ls benchmark/compare/
     git reset --hard ${commits[0]}
@@ -19,6 +23,8 @@ if [[ $TRAVIS_GO_VERSION = 1.8* ]]; then
     if [ -e "benchmark/compare/main.go" ]; then
       echo "after reset: dir benchmark/compare exist"
     else
+      mv benchmark/tmpstats benchmark/stats
+      mv benchmark/tmp17test benchmark/benchmark17_test.go 
       mv benchmark/compare/tmp benchmark/compare/main.go
     fi
     go test google.golang.org/grpc/benchmark/... -benchmem -bench=BenchmarkClient/Tracing-kbps_0-MTU_0-maxConcurrentCalls_1 | tee benchmark/compare/result2
