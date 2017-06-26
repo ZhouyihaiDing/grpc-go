@@ -80,11 +80,5 @@ func BenchmarkClient(b *testing.B) {
 			}
 		}
 	}
-
+	
 }
-
-/*
-func TestMain(m *testing.M) {
-	os.Exit(stats.RunTestMain(m))
-}
-*/

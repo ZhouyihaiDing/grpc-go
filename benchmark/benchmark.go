@@ -231,7 +231,7 @@ func NewClientConn(addr string, opts ...grpc.DialOption) *grpc.ClientConn {
 }
 
 func runUnary(b *testing.B, s *stats.Stats, maxConcurrentCalls, reqSize, respSize, kbps, mtu int, ltc time.Duration) {
-	if s == nil{
+	if s == nil {
 		s = stats.AddStats(b, 38)
 	}
 	s.Clear()

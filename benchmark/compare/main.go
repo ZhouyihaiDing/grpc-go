@@ -74,7 +74,7 @@ func compareTwoMap(m1, m2 map[string][]string) {
 	unit2num["µs"] = 1000
 	for k2, v2 := range m2 {
 		if v1, ok := m1[k2]; ok {
-			var changes string = combineString("\nTitle", "\tBefore", "After", "\tPercentage")
+			changes := combineString("\nTitle", "\tBefore", "After", "\tPercentage")
 			var factor float64 = 1
 			for i := 0; i < 18; i++ {
 				if i == 6 {
