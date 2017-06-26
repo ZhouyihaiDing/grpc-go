@@ -10,5 +10,5 @@ before_install:
   - go get -u golang.org/x/tools/cmd/goimports github.com/axw/gocov/gocov github.com/mattn/goveralls golang.org/x/tools/cmd/cover
 
 script:
-  - ./benchmark/compare/run.sh
+  - ./benchmark/compare/compare_travis.sh
   - ls
