@@ -64,7 +64,7 @@ func createMap(fileName string, m map[string][]string) {
 }
 
 func combineString(title, val1, val2, percentChange string) string {
-	return fmt.Sprintf("%10s | %11s -> %11s => %8s \n", title, val1, val2, percentChange)
+	return fmt.Sprintf("%10s  %12s  %12s   %8s \n", title, val1, val2, percentChange)
 }
 
 func compareTwoMap(m1, m2 map[string][]string) {
@@ -74,7 +74,7 @@ func compareTwoMap(m1, m2 map[string][]string) {
 	unit2num["µs"] = 1000
 	for k2, v2 := range m2 {
 		if v1, ok := m1[k2]; ok {
-			var changes string
+			var changes string = combineString("\nTitle", "\tBefore", "After", "\tPercentage")
 			var factor float64 = 1
 			for i := 0; i < 18; i++ {
 				if i == 6 {
@@ -89,7 +89,7 @@ func compareTwoMap(m1, m2 map[string][]string) {
 
 				switch {
 				case i == 0:
-					changes = changes + combineString("\noperations", v1[i], v2[i], "")
+					changes = changes + combineString("operations", v1[i], v2[i], "")
 				case i >= 1 && i <= 7:
 					changes = changes + combineString(v1[i+1], v1[i], v2[i], percentChange)
 				case i > 7:

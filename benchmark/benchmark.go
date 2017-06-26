@@ -231,6 +231,9 @@ func NewClientConn(addr string, opts ...grpc.DialOption) *grpc.ClientConn {
 }
 
 func runUnary(b *testing.B, s *stats.Stats, maxConcurrentCalls, reqSize, respSize, kbps, mtu int, ltc time.Duration) {
+	if s == nil{
+		s = stats.AddStats(b, 38)
+	}
 	s.Clear()
 	b.ResetTimer()
 	nw := &latency.Network{Kbps: kbps, Latency: ltc, MTU: mtu}
@@ -281,8 +284,10 @@ func runUnary(b *testing.B, s *stats.Stats, maxConcurrentCalls, reqSize, respSiz
 }
 
 func runStream(b *testing.B, s *stats.Stats, maxConcurrentCalls, reqSize, respSize, kbps, mtu int, ltc time.Duration) {
-	s.Clear()
-	b.ResetTimer()
+	//fmt.Println(s)
+	if s == nil {
+		s = stats.AddStats(b, 38)
+	}
 	nw := &latency.Network{Kbps: kbps, Latency: ltc, MTU: mtu}
 	b.StopTimer()
 	target, stopper := StartServer(ServerInfo{Addr: "localhost:0", Type: "protobuf", Network: nw}, grpc.MaxConcurrentStreams(uint32(maxConcurrentCalls+1)))
