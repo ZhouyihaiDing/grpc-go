@@ -911,6 +911,7 @@ func (ac *addrConn) resetTransport(closeTransport bool) error {
 			if ac.cc.dopts.balancer != nil {
 				ac.down = ac.cc.dopts.balancer.Up(addr)
 			}
+			ac.curAddr = addr
 			ac.mu.Unlock()
 			return nil
 		}
