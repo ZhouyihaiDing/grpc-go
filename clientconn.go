@@ -744,10 +744,11 @@ type addrConn struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	cc     *ClientConn
-	addrs  []Address
-	dopts  dialOptions
-	events trace.EventLog
+	cc      *ClientConn
+	curAddr Address
+	addrs   []Address
+	dopts   dialOptions
+	events  trace.EventLog
 
 	mu      sync.Mutex
 	state   ConnectivityState
@@ -923,6 +924,7 @@ func (ac *addrConn) resetTransport(drain bool) error {
 			if ac.cc.dopts.balancer != nil {
 				ac.down = ac.cc.dopts.balancer.Up(addr)
 			}
+			ac.curAddr = addr
 			ac.mu.Unlock()
 			return nil
 		}
@@ -963,9 +965,9 @@ func (ac *addrConn) transportMonitor() {
 			// In both cases, a new ac is created.
 			select {
 			case <-t.Error():
-				ac.cc.resetAddrConn(ac.addrs[0], false, errNetworkIO)
+				ac.cc.resetAddrConn(ac.curAddr, false, errNetworkIO)
 			default:
-				ac.cc.resetAddrConn(ac.addrs[0], false, errConnDrain)
+				ac.cc.resetAddrConn(ac.curAddr, false, errConnDrain)
 			}
 			return
 		case <-t.Error():
@@ -975,7 +977,7 @@ func (ac *addrConn) transportMonitor() {
 				return
 			case <-t.GoAway():
 				ac.adjustParams(t.GetGoAwayReason())
-				ac.cc.resetAddrConn(ac.addrs[0], false, errNetworkIO)
+				ac.cc.resetAddrConn(ac.curAddr, false, errNetworkIO)
 				return
 			default:
 			}
