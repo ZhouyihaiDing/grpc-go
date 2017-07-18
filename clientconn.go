@@ -517,7 +517,7 @@ func (cc *ClientConn) lbWatcher(doneChan chan struct{}) {
 			}
 			if !keep {
 				del = append(del, c)
-				delete(cc.conns, c.addrs[0])
+				delete(cc.conns, c.curAddr)
 			}
 		}
 		cc.mu.Unlock()
@@ -829,43 +829,29 @@ func (ac *addrConn) waitForStateChange(ctx context.Context, sourceState Connecti
 	return ac.state, nil
 }
 
-// resetTransport recreates a transport to the address for ac.
-// For the old transport:
-// - if drain is true, it will be gracefully closed.
-// - otherwise, it will be closed.
-func (ac *addrConn) resetTransport(drain bool) error {
-	ac.mu.Lock()
-	ac.printf("connecting")
-	if ac.down != nil {
-		ac.down(downErrorf(false, true, "%v", errNetworkIO))
-		ac.down = nil
-	}
-	ac.state = Connecting
-	ac.stateCV.Broadcast()
-	t := ac.transport
-	ac.transport = nil
-	ac.mu.Unlock()
-	if t != nil {
-		if drain {
-			t.GracefulClose()
-		} else {
-			t.Close()
-		}
-	}
-	ac.cc.mu.RLock()
-	ac.dopts.copts.KeepaliveParams = ac.cc.mkp
-	ac.cc.mu.RUnlock()
+func (ac *addrConn) resetTransport(closeTransport bool) error {
 	for retries := 0; ; retries++ {
 		sleepTime := ac.dopts.bs.backoff(retries)
 		connectTime := time.Now()
 		for _, addr := range ac.addrs {
 			ac.mu.Lock()
+			ac.printf("connecting")
 			if ac.state == Shutdown {
 				// ac.tearDown(...) has been invoked.
 				ac.mu.Unlock()
 				return errConnClosing
 			}
+			if ac.down != nil {
+				ac.down(downErrorf(false, true, "%v", errNetworkIO))
+				ac.down = nil
+			}
+			ac.state = Connecting
+			ac.stateCV.Broadcast()
+			t := ac.transport
 			ac.mu.Unlock()
+			if closeTransport && t != nil {
+				t.Close()
+			}
 			timeout := minConnectTimeout
 			if timeout < sleepTime {
 				timeout = sleepTime
@@ -899,6 +885,7 @@ func (ac *addrConn) resetTransport(drain bool) error {
 					ac.ready = nil
 				}
 				ac.mu.Unlock()
+				closeTransport = false
 				select {
 				case <-ac.ctx.Done():
 					return ac.ctx.Err()
@@ -924,7 +911,6 @@ func (ac *addrConn) resetTransport(drain bool) error {
 			if ac.cc.dopts.balancer != nil {
 				ac.down = ac.cc.dopts.balancer.Up(addr)
 			}
-			ac.curAddr = addr
 			ac.mu.Unlock()
 			return nil
 		}
@@ -932,6 +918,7 @@ func (ac *addrConn) resetTransport(drain bool) error {
 		select {
 		case <-timer.C:
 		case <-ac.ctx.Done():
+			timer.Stop()
 			return ac.ctx.Err()
 		}
 		timer.Stop()
