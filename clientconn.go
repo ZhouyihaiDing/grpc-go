@@ -414,7 +414,9 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 			}
 		}
 		// No balancer, or no resolver within the balancer.  Connect directly.
-		if err := cc.resetAddrConn([]Address{Address{Addr: target}}, cc.dopts.block, nil); err != nil {
+		var inputaddr []Address
+		inputaddr = append(inputaddr, Address{Addr: target})
+		if err := cc.resetAddrConn(inputaddr, cc.dopts.block, nil); err != nil {
 			waitC <- err
 			return
 		}
@@ -571,7 +573,9 @@ func (cc *ClientConn) lbWatcher(doneChan chan struct{}) {
 
 		if isFirstFind {
 			if len(cc.conns) == 0 {
-				firstFindConn.tearDown(errConnDrain)
+				if firstFindConn != nil {
+					firstFindConn.tearDown(errConnDrain)
+				}
 			}
 		} else {
 			for _, c := range del {
@@ -590,8 +594,8 @@ func (cc *ClientConn) scWatcher() {
 				return
 			}
 			cc.mu.Lock()
-			// TODO: load balance policy runtime change is ignored.
-			// We may revist this decision in the future.
+		// TODO: load balance policy runtime change is ignored.
+		// We may revist this decision in the future.
 			cc.sc = sc
 			cc.mu.Unlock()
 		case <-cc.ctx.Done():
@@ -603,7 +607,7 @@ func (cc *ClientConn) scWatcher() {
 // resetAddrConn creates an addrConn for addr and adds it to cc.conns.
 // If there is an old addrConn for addr, it will be torn down, using tearDownErr as the reason.
 // If tearDownErr is nil, errConnDrain will be used instead.
-func (cc *ClientConn) resetAddrConn(addrs []Address, block bool, tearDownErr error) error {
+func (cc *ClientConn) resetAddrConn(addr []Address, block bool, tearDownErr error) error {
 	// if current transport in addrs, just change lists to update order and new addresses
 	//if len(cc.conns) != 0{
 	//	var currentAc *addrConn
@@ -630,8 +634,11 @@ func (cc *ClientConn) resetAddrConn(addrs []Address, block bool, tearDownErr err
 
 	ac := &addrConn{
 		cc:    cc,
-		addrs: addrs,
+		addrs: addr,
 		dopts: cc.dopts,
+	}
+	for _, a := range addr {
+		ac.addrs = append(ac.addrs, a)
 	}
 	cc.mu.RLock()
 	ac.dopts.copts.KeepaliveParams = cc.mkp
@@ -774,7 +781,6 @@ func (cc *ClientConn) getTransport(ctx context.Context, opts BalancerGetOptions)
 			return nil, nil, toRPCErr(ErrClientConnClosing)
 		}
 		ac, ok = cc.conns[addr]
-		fmt.Println("cc.conns:", cc.conns, "ac", ac.addrs)
 		cc.mu.RUnlock()
 	}
 	if !ok {
@@ -834,12 +840,12 @@ type addrConn struct {
 	state   ConnectivityState
 	stateCV *sync.Cond
 	down    func(error) // the handler called when a connection is down.
-	// ready is closed and becomes nil when a new transport is up or failed
-	// due to timeout.
+											// ready is closed and becomes nil when a new transport is up or failed
+											// due to timeout.
 	ready     chan struct{}
 	transport transport.ClientTransport
 
-	// The reason this addrConn is torn down.
+											// The reason this addrConn is torn down.
 	tearDownErr error
 }
 
@@ -945,7 +951,7 @@ func (ac *addrConn) resetTransport(closeTransport bool) error {
 			newTransport, err := transport.NewClientTransport(ctx, sinfo, ac.dopts.copts)
 			// Don't call cancel in success path due to a race in Go 1.6:
 			// https://github.com/golang/go/issues/15078.
-//			fmt.Println(1, err)
+			//			fmt.Println(1, err)
 			if err != nil {
 				cancel()
 
@@ -990,16 +996,16 @@ func (ac *addrConn) resetTransport(closeTransport bool) error {
 				close(ac.ready)
 				ac.ready = nil
 			}
-	//		fmt.Println(3)
+			//		fmt.Println(3)
 			if ac.cc.dopts.balancer != nil {
 				ac.down = ac.cc.dopts.balancer.Up(addr)
 			}
-	//		fmt.Println(4)
+			//		fmt.Println(4)
 			ac.curAddr = addr
 			ac.mu.Unlock()
 			return nil
 		}
-	//	fmt.Println(2)
+		//	fmt.Println(2)
 		timer := time.NewTimer(sleepTime - time.Since(connectTime))
 		select {
 		case <-timer.C:
@@ -1022,40 +1028,38 @@ func (ac *addrConn) transportMonitor() {
 		// This is needed to detect the teardown when
 		// the addrConn is idle (i.e., no RPC in flight).
 		case <-ac.ctx.Done():
-			select {
-			case <-t.Error():
-				t.Close()
-			default:
-			}
+				select {
+				case <-t.Error():
+					t.Close()
+				default:
+				}
 			return
 		case <-t.GoAway():
 			ac.adjustParams(t.GetGoAwayReason())
-			// If GoAway happens without any network I/O error, ac is closed without shutting down the
-			// underlying transport (the transport will be closed when all the pending RPCs finished or
-			// failed.).
-			// If GoAway and some network I/O error happen concurrently, ac and its underlying transport
-			// are closed.
-			// In both cases, a new ac is created.
-			select {
-			case <-t.Error():
-				fmt.Println("TransportMonitor create")
-				ac.cc.resetAddrConn([]Address{ac.curAddr}, false, errNetworkIO)
-			default:
-				fmt.Println("TransportMonitor create")
-				ac.cc.resetAddrConn([]Address{ac.curAddr}, false, errConnDrain)
-			}
+		// If GoAway happens without any network I/O error, ac is closed without shutting down the
+		// underlying transport (the transport will be closed when all the pending RPCs finished or
+		// failed.).
+		// If GoAway and some network I/O error happen concurrently, ac and its underlying transport
+		// are closed.
+		// In both cases, a new ac is created.
+				select {
+				case <-t.Error():
+					ac.cc.resetAddrConn([]Address{ac.curAddr}, false, errNetworkIO)
+				default:
+					ac.cc.resetAddrConn([]Address{ac.curAddr}, false, errConnDrain)
+				}
 			return
 		case <-t.Error():
-			select {
-			case <-ac.ctx.Done():
-				t.Close()
-				return
-			case <-t.GoAway():
-				ac.adjustParams(t.GetGoAwayReason())
-				ac.cc.resetAddrConn([]Address{ac.curAddr}, false, errNetworkIO)
-				return
-			default:
-			}
+				select {
+				case <-ac.ctx.Done():
+					t.Close()
+					return
+				case <-t.GoAway():
+					ac.adjustParams(t.GetGoAwayReason())
+					ac.cc.resetAddrConn([]Address{ac.curAddr}, false, errNetworkIO)
+					return
+				default:
+				}
 			ac.mu.Lock()
 			if ac.state == Shutdown {
 				// ac has been shutdown.
@@ -1066,7 +1070,6 @@ func (ac *addrConn) transportMonitor() {
 			ac.stateCV.Broadcast()
 			ac.mu.Unlock()
 			if err := ac.resetTransport(true); err != nil {
-				fmt.Println("TransportMonitor create")
 				ac.mu.Lock()
 				ac.printf("transport exiting: %v", err)
 				ac.mu.Unlock()
