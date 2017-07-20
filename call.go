@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/transport"
+	"fmt"
 )
 
 // recvResponse receives and parses an RPC response.
@@ -230,6 +231,7 @@ func invoke(ctx context.Context, method string, args, reply interface{}, cc *Cli
 		}
 		t, put, err = cc.getTransport(ctx, gopts)
 		if err != nil {
+			fmt.Println("xxxxxxxxxxxxxxxxxxxxxxxxxxxx")
 			// TODO(zhaoq): Probably revisit the error handling.
 			if _, ok := status.FromError(err); ok {
 				return err
@@ -264,6 +266,7 @@ func invoke(ctx context.Context, method string, args, reply interface{}, cc *Cli
 		}
 		err = sendRequest(ctx, cc.dopts, cc.dopts.cp, &c, callHdr, stream, t, args, topts)
 		if err != nil {
+			fmt.Println("yyyyyyyyyyyyyyyyyyyyyyyyyyyy")
 			if put != nil {
 				updateRPCInfoInContext(ctx, rpcInfo{
 					bytesSent:     stream.BytesSent(),
@@ -280,7 +283,9 @@ func invoke(ctx context.Context, method string, args, reply interface{}, cc *Cli
 			return toRPCErr(err)
 		}
 		err = recvResponse(ctx, cc.dopts, t, &c, stream, reply)
+		//fmt.Println(" stream.Status():", stream.Status().Err())
 		if err != nil {
+			fmt.Println("zzzzzzzzzzzzzzzzzzzzzzzzzzzzz")
 			if put != nil {
 				updateRPCInfoInContext(ctx, rpcInfo{
 					bytesSent:     stream.BytesSent(),
@@ -304,6 +309,7 @@ func invoke(ctx context.Context, method string, args, reply interface{}, cc *Cli
 			})
 			put()
 		}
+		//fmt.Println(" stream.Status():", stream.Status().Err())
 		return stream.Status().Err()
 	}
 }

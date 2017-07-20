@@ -33,6 +33,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/transport"
+	"reflect"
 )
 
 var (
@@ -408,11 +409,12 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 				} else {
 					go cc.lbWatcher(nil)
 				}
+				fmt.Println("return conn")
 				return
 			}
 		}
 		// No balancer, or no resolver within the balancer.  Connect directly.
-		if err := cc.resetAddrConn(Address{Addr: target}, cc.dopts.block, nil); err != nil {
+		if err := cc.resetAddrConn([]Address{Address{Addr: target}}, cc.dopts.block, nil); err != nil {
 			waitC <- err
 			return
 		}
@@ -496,18 +498,29 @@ type ClientConn struct {
 // connections accordingly.  If doneChan is not nil, it is closed after the
 // first successfull connection is made.
 func (cc *ClientConn) lbWatcher(doneChan chan struct{}) {
+	fmt.Println("here")
+	var (
+		isFirstFind	bool
+		firstFindConn *addrConn	// tear down when the cc.conns is empty
+	)
 	for addrs := range cc.dopts.balancer.Notify() {
+		fmt.Println("Get notifued addrs, ", addrs, reflect.TypeOf(addrs))
 		var (
 			add []Address   // Addresses need to setup connections.
 			del []*addrConn // Connections need to tear down.
 		)
 		cc.mu.Lock()
 		for _, a := range addrs {
+			if reflect.TypeOf(a.Metadata) == reflect.TypeOf(FirstFindMD{}) {
+				fmt.Println("isFirstFind = true")
+				isFirstFind = true
+			}
 			if _, ok := cc.conns[a]; !ok {
 				add = append(add, a)
 			}
 		}
 		for k, c := range cc.conns {
+			firstFindConn = c
 			var keep bool
 			for _, a := range addrs {
 				if k == a {
@@ -516,25 +529,56 @@ func (cc *ClientConn) lbWatcher(doneChan chan struct{}) {
 				}
 			}
 			if !keep {
-				del = append(del, c)
-				delete(cc.conns, c.curAddr)
+				del = append(del, c)	// for regular lb
+				delete(cc.conns, k)
 			}
 		}
 		cc.mu.Unlock()
-		for _, a := range add {
+
+		fmt.Println("add", add)
+		if len(add) > 0 && isFirstFind{
+
+			var newAdd []Address
+			for k, c := range cc.conns{
+				newAdd = append(newAdd, k)
+				c.tearDown(errConnDrain)
+			}
+			newAdd = append(newAdd, add ...)
+			fmt.Println("type: firstFindMD", newAdd)
+			cc.resetAddrConn(newAdd, true, nil)
 			if doneChan != nil {
-				err := cc.resetAddrConn(a, true, nil)
-				if err == nil {
-					close(doneChan)
-					doneChan = nil
+				close(doneChan)
+				doneChan = nil
+			}
+
+		} else {
+			if len(add) == 0 && isFirstFind{
+				fmt.Println("firstFind but add = 0")
+			}
+			fmt.Println("xxxxxxx type: firstFindMD")
+			for _, a := range add {
+				if doneChan != nil {
+					err := cc.resetAddrConn([]Address{a}, true, nil)
+					if err == nil {
+						close(doneChan)
+						doneChan = nil
+					}
+				} else {
+					cc.resetAddrConn([]Address{a}, false, nil)
 				}
-			} else {
-				cc.resetAddrConn(a, false, nil)
 			}
 		}
-		for _, c := range del {
-			c.tearDown(errConnDrain)
+
+		if isFirstFind {
+			if len(cc.conns) == 0 {
+				firstFindConn.tearDown(errConnDrain)
+			}
+		} else {
+			for _, c := range del {
+				c.tearDown(errConnDrain)
+			}
 		}
+
 	}
 }
 
@@ -559,10 +603,34 @@ func (cc *ClientConn) scWatcher() {
 // resetAddrConn creates an addrConn for addr and adds it to cc.conns.
 // If there is an old addrConn for addr, it will be torn down, using tearDownErr as the reason.
 // If tearDownErr is nil, errConnDrain will be used instead.
-func (cc *ClientConn) resetAddrConn(addr Address, block bool, tearDownErr error) error {
+func (cc *ClientConn) resetAddrConn(addrs []Address, block bool, tearDownErr error) error {
+	// if current transport in addrs, just change lists to update order and new addresses
+	//if len(cc.conns) != 0{
+	//	var currentAc *addrConn
+	//	for _, v := range cc.conns{
+	//		currentAc = v
+	//		break
+	//	}
+	//	var addrInUse bool
+	//	for _, addr := range addrs {
+	//		if addr == currentAc.curAddr {
+	//			addrInUse = true
+	//			break
+	//		}
+	//	}
+	//	if addrInUse {
+	//		cc.conns = make(map[Address]*addrConn)
+	//		for _, addr := range addrs {
+	//			cc.conns[addr] = currentAc
+	//		}
+	//		currentAc.addrs = addrs
+	//		return nil
+	//	}
+	//}
+
 	ac := &addrConn{
 		cc:    cc,
-		addrs: []Address{addr},
+		addrs: addrs,
 		dopts: cc.dopts,
 	}
 	cc.mu.RLock()
@@ -594,7 +662,9 @@ func (cc *ClientConn) resetAddrConn(addr Address, block bool, tearDownErr error)
 		return ErrClientConnClosing
 	}
 	stale := cc.conns[ac.addrs[0]]
-	cc.conns[ac.addrs[0]] = ac
+	for i := 0; i < len(ac.addrs); i++ {
+		cc.conns[ac.addrs[i]] = ac
+	}
 	cc.mu.Unlock()
 	if stale != nil {
 		// There is an addrConn alive on ac.addr already. This could be due to
@@ -612,8 +682,11 @@ func (cc *ClientConn) resetAddrConn(addr Address, block bool, tearDownErr error)
 			stale.tearDown(tearDownErr)
 		}
 	}
+	fmt.Println("ac", ac.addrs)
 	if block {
+		fmt.Println("block")
 		if err := ac.resetTransport(false); err != nil {
+			fmt.Println(err)
 			if err != errConnClosing {
 				// Tear down ac and delete it from cc.conns.
 				cc.mu.Lock()
@@ -626,6 +699,7 @@ func (cc *ClientConn) resetAddrConn(addr Address, block bool, tearDownErr error)
 			}
 			return err
 		}
+		fmt.Println("end block")
 		// Start to monitor the error status of transport.
 		go ac.transportMonitor()
 	} else {
@@ -642,6 +716,7 @@ func (cc *ClientConn) resetAddrConn(addr Address, block bool, tearDownErr error)
 			ac.transportMonitor()
 		}()
 	}
+	fmt.Println("reset successful")
 	return nil
 }
 
@@ -689,6 +764,7 @@ func (cc *ClientConn) getTransport(ctx context.Context, opts BalancerGetOptions)
 			err  error
 		)
 		addr, put, err = cc.dopts.balancer.Get(ctx, opts)
+		fmt.Println("get arrd -------------- ", addr)
 		if err != nil {
 			return nil, nil, toRPCErr(err)
 		}
@@ -698,9 +774,11 @@ func (cc *ClientConn) getTransport(ctx context.Context, opts BalancerGetOptions)
 			return nil, nil, toRPCErr(ErrClientConnClosing)
 		}
 		ac, ok = cc.conns[addr]
+		fmt.Println("cc.conns:", cc.conns, "ac", ac.addrs)
 		cc.mu.RUnlock()
 	}
 	if !ok {
+		fmt.Println("!ok")
 		if put != nil {
 			updateRPCInfoInContext(ctx, rpcInfo{bytesSent: false, bytesReceived: false})
 			put()
@@ -709,12 +787,14 @@ func (cc *ClientConn) getTransport(ctx context.Context, opts BalancerGetOptions)
 	}
 	t, err := ac.wait(ctx, cc.dopts.balancer != nil, !opts.BlockingWait)
 	if err != nil {
+		fmt.Println("err != nil")
 		if put != nil {
 			updateRPCInfoInContext(ctx, rpcInfo{bytesSent: false, bytesReceived: false})
 			put()
 		}
 		return nil, nil, err
 	}
+	fmt.Println("return reset transport")
 	return t, put, nil
 }
 
@@ -833,6 +913,7 @@ func (ac *addrConn) resetTransport(closeTransport bool) error {
 	for retries := 0; ; retries++ {
 		sleepTime := ac.dopts.bs.backoff(retries)
 		connectTime := time.Now()
+		fmt.Println("retries:", retries)
 		for _, addr := range ac.addrs {
 			ac.mu.Lock()
 			ac.printf("connecting")
@@ -864,6 +945,7 @@ func (ac *addrConn) resetTransport(closeTransport bool) error {
 			newTransport, err := transport.NewClientTransport(ctx, sinfo, ac.dopts.copts)
 			// Don't call cancel in success path due to a race in Go 1.6:
 			// https://github.com/golang/go/issues/15078.
+//			fmt.Println(1, err)
 			if err != nil {
 				cancel()
 
@@ -908,13 +990,16 @@ func (ac *addrConn) resetTransport(closeTransport bool) error {
 				close(ac.ready)
 				ac.ready = nil
 			}
+	//		fmt.Println(3)
 			if ac.cc.dopts.balancer != nil {
 				ac.down = ac.cc.dopts.balancer.Up(addr)
 			}
+	//		fmt.Println(4)
 			ac.curAddr = addr
 			ac.mu.Unlock()
 			return nil
 		}
+	//	fmt.Println(2)
 		timer := time.NewTimer(sleepTime - time.Since(connectTime))
 		select {
 		case <-timer.C:
@@ -953,9 +1038,11 @@ func (ac *addrConn) transportMonitor() {
 			// In both cases, a new ac is created.
 			select {
 			case <-t.Error():
-				ac.cc.resetAddrConn(ac.curAddr, false, errNetworkIO)
+				fmt.Println("TransportMonitor create")
+				ac.cc.resetAddrConn([]Address{ac.curAddr}, false, errNetworkIO)
 			default:
-				ac.cc.resetAddrConn(ac.curAddr, false, errConnDrain)
+				fmt.Println("TransportMonitor create")
+				ac.cc.resetAddrConn([]Address{ac.curAddr}, false, errConnDrain)
 			}
 			return
 		case <-t.Error():
@@ -965,7 +1052,7 @@ func (ac *addrConn) transportMonitor() {
 				return
 			case <-t.GoAway():
 				ac.adjustParams(t.GetGoAwayReason())
-				ac.cc.resetAddrConn(ac.curAddr, false, errNetworkIO)
+				ac.cc.resetAddrConn([]Address{ac.curAddr}, false, errNetworkIO)
 				return
 			default:
 			}
@@ -979,6 +1066,7 @@ func (ac *addrConn) transportMonitor() {
 			ac.stateCV.Broadcast()
 			ac.mu.Unlock()
 			if err := ac.resetTransport(true); err != nil {
+				fmt.Println("TransportMonitor create")
 				ac.mu.Lock()
 				ac.printf("transport exiting: %v", err)
 				ac.mu.Unlock()

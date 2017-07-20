@@ -94,6 +94,7 @@ func (h *testStreamHandler) handleStream(t *testing.T, s *transport.Stream) {
 			return
 		}
 		if v == "port" {
+			fmt.Println("request should return a port error")
 			h.t.WriteStatus(s, status.New(codes.Internal, h.port))
 			return
 		}
@@ -213,7 +214,8 @@ func setUp(t *testing.T, port int, maxStreams uint32) (*server, *ClientConn) {
 func TestInvoke(t *testing.T) {
 	server, cc := setUp(t, 0, math.MaxUint32)
 	var reply string
-	if err := Invoke(context.Background(), "/foo/bar", &expectedRequest, &reply, cc); err != nil || reply != expectedResponse {
+	var err error
+	if err = Invoke(context.Background(), "/foo/bar", &expectedRequest, &reply, cc); err != nil || reply != expectedResponse {
 		t.Fatalf("grpc.Invoke(_, _, _, _, _) = %v, want <nil>", err)
 	}
 	cc.Close()
