@@ -38,7 +38,6 @@ import (
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
-	"fmt"
 )
 
 // http2Client implements the ClientTransport interface with HTTP2.
@@ -311,7 +310,6 @@ func (t *http2Client) newStream(ctx context.Context, callHdr *CallHdr) *Stream {
 		sendQuotaPool: newQuotaPool(int(t.streamSendQuota)),
 		headerChan:    make(chan struct{}),
 	}
-	fmt.Println("t.target", t.target)
 	t.nextID += 2
 	s.requestRead = func(n int) {
 		t.adjustWindow(s, uint32(n))
