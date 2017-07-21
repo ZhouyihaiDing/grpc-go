@@ -248,7 +248,6 @@ func (rr *roundRobin) Up(addr Address) func(error) {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 	var cnt int
-	fmt.Println("UP: ", addr, rr.addrs)
 	for _, a := range rr.addrs {
 		if a.addr == addr {
 			if a.connected {
@@ -284,7 +283,6 @@ func (rr *roundRobin) down(addr Address, err error) {
 
 // Get returns the next addr in the rotation.
 func (rr *roundRobin) Get(ctx context.Context, opts BalancerGetOptions) (addr Address, put func(), err error) {
-	//fmt.Println("start Get")
 	var ch chan struct{}
 	rr.mu.Lock()
 	if rr.done {
@@ -294,25 +292,20 @@ func (rr *roundRobin) Get(ctx context.Context, opts BalancerGetOptions) (addr Ad
 	}
 
 	if len(rr.addrs) > 0 {
-		//fmt.Println("initial rr.next", rr.next)
 		if rr.next >= len(rr.addrs) {
 			rr.next = 0
 		}
 		next := rr.next
-		//fmt.Println("a: ", next, rr.next)
 		for {
 			a := rr.addrs[next]
-			//fmt.Println("b", next, a.connected)
 			next = (next + 1) % len(rr.addrs)
 			if a.connected {
 				addr = a.addr
-				//fmt.Println("addr.get: ",addr, "next:", rr.next, rr.addrs[next], len(rr.addrs))
 				rr.next = next
 				rr.mu.Unlock()
 				return
 			}
 			if next == rr.next {
-				// Has iterated all the possible address but none is connected.
 				break
 			}
 		}
@@ -325,7 +318,6 @@ func (rr *roundRobin) Get(ctx context.Context, opts BalancerGetOptions) (addr Ad
 		}
 		// Returns the next addr on rr.addrs for failfast RPCs.
 		addr = rr.addrs[rr.next].addr
-		fmt.Println("addr.get: ",addr)
 		rr.next++
 		rr.mu.Unlock()
 		return

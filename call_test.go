@@ -94,7 +94,6 @@ func (h *testStreamHandler) handleStream(t *testing.T, s *transport.Stream) {
 			return
 		}
 		if v == "port" {
-			fmt.Println("request should return a port error")
 			h.t.WriteStatus(s, status.New(codes.Internal, h.port))
 			return
 		}

@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -33,7 +34,6 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/transport"
-	"reflect"
 )
 
 var (
@@ -409,7 +409,6 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 				} else {
 					go cc.lbWatcher(nil)
 				}
-				fmt.Println("return conn")
 				return
 			}
 		}
@@ -500,25 +499,24 @@ type ClientConn struct {
 // connections accordingly.  If doneChan is not nil, it is closed after the
 // first successfull connection is made.
 func (cc *ClientConn) lbWatcher(doneChan chan struct{}) {
-	fmt.Println("here")
 	var (
-		isFirstFind	bool
-		firstFindConn *addrConn	// tear down when the cc.conns is empty
+		firstFindConn *addrConn // tear down when the cc.conns is empty
+		isroundRobin  bool      // true: roundrobin, false: pickfirst
 	)
+	if reflect.TypeOf(cc.dopts.balancer) == reflect.TypeOf(&roundRobin{}) {
+		isroundRobin = true
+	}
 	for addrs := range cc.dopts.balancer.Notify() {
-		fmt.Println("Get notifued addrs, ", addrs, reflect.TypeOf(addrs))
 		var (
 			add []Address   // Addresses need to setup connections.
 			del []*addrConn // Connections need to tear down.
 		)
 		cc.mu.Lock()
-		for _, a := range addrs {
-			if reflect.TypeOf(a.Metadata) == reflect.TypeOf(FirstFindMD{}) {
-				fmt.Println("isFirstFind = true")
-				isFirstFind = true
-			}
-			if _, ok := cc.conns[a]; !ok {
-				add = append(add, a)
+		for _, addr := range addrs {
+			if _, ok := cc.conns[addr]; !ok {
+				add = append(add, addr)
+			} else {
+				firstFindConn = cc.conns[addr]
 			}
 		}
 		for k, c := range cc.conns {
@@ -531,33 +529,19 @@ func (cc *ClientConn) lbWatcher(doneChan chan struct{}) {
 				}
 			}
 			if !keep {
-				del = append(del, c)	// for regular lb
+				del = append(del, c)
 				delete(cc.conns, k)
 			}
 		}
 		cc.mu.Unlock()
 
-		fmt.Println("add", add)
-		if len(add) > 0 && isFirstFind{
-
-			var newAdd []Address
-			for k, c := range cc.conns{
-				newAdd = append(newAdd, k)
-				c.tearDown(errConnDrain)
-			}
-			newAdd = append(newAdd, add ...)
-			fmt.Println("type: firstFindMD", newAdd)
-			cc.resetAddrConn(newAdd, true, nil)
+		if len(addrs) > 0 && !isroundRobin {
+			cc.resetAddrConn(addrs, true, nil)
 			if doneChan != nil {
 				close(doneChan)
 				doneChan = nil
 			}
-
-		} else {
-			if len(add) == 0 && isFirstFind{
-				fmt.Println("firstFind but add = 0")
-			}
-			fmt.Println("xxxxxxx type: firstFindMD")
+		} else { // isroundRobin, remain the same but change a to []Address{a}
 			for _, a := range add {
 				if doneChan != nil {
 					err := cc.resetAddrConn([]Address{a}, true, nil)
@@ -571,7 +555,8 @@ func (cc *ClientConn) lbWatcher(doneChan chan struct{}) {
 			}
 		}
 
-		if isFirstFind {
+		if !isroundRobin {
+			// Notify may delete all address. time to tear down, or leave it?
 			if len(cc.conns) == 0 {
 				if firstFindConn != nil {
 					firstFindConn.tearDown(errConnDrain)
@@ -609,28 +594,29 @@ func (cc *ClientConn) scWatcher() {
 // If tearDownErr is nil, errConnDrain will be used instead.
 func (cc *ClientConn) resetAddrConn(addr []Address, block bool, tearDownErr error) error {
 	// if current transport in addrs, just change lists to update order and new addresses
-	//if len(cc.conns) != 0{
-	//	var currentAc *addrConn
-	//	for _, v := range cc.conns{
-	//		currentAc = v
-	//		break
-	//	}
-	//	var addrInUse bool
-	//	for _, addr := range addrs {
-	//		if addr == currentAc.curAddr {
-	//			addrInUse = true
-	//			break
-	//		}
-	//	}
-	//	if addrInUse {
-	//		cc.conns = make(map[Address]*addrConn)
-	//		for _, addr := range addrs {
-	//			cc.conns[addr] = currentAc
-	//		}
-	//		currentAc.addrs = addrs
-	//		return nil
-	//	}
-	//}
+	// not work for roundrobin
+	if len(cc.conns) != 0 && !(reflect.TypeOf(cc.dopts.balancer) == reflect.TypeOf(&roundRobin{})) {
+		var currentAc *addrConn
+		for _, v := range cc.conns {
+			currentAc = v
+			break
+		}
+		var addrInUse bool
+		for _, addr := range addr {
+			if addr == currentAc.curAddr {
+				addrInUse = true
+				break
+			}
+		}
+		if addrInUse {
+			cc.conns = make(map[Address]*addrConn)
+			for _, addr := range addr {
+				cc.conns[addr] = currentAc
+			}
+			currentAc.addrs = addr
+			return nil
+		}
+	}
 
 	ac := &addrConn{
 		cc:    cc,
@@ -668,7 +654,7 @@ func (cc *ClientConn) resetAddrConn(addr []Address, block bool, tearDownErr erro
 		cc.mu.Unlock()
 		return ErrClientConnClosing
 	}
-	stale := cc.conns[ac.addrs[0]]
+	stale := cc.conns[ac.curAddr]
 	for i := 0; i < len(ac.addrs); i++ {
 		cc.conns[ac.addrs[i]] = ac
 	}
@@ -689,11 +675,8 @@ func (cc *ClientConn) resetAddrConn(addr []Address, block bool, tearDownErr erro
 			stale.tearDown(tearDownErr)
 		}
 	}
-	fmt.Println("ac", ac.addrs)
 	if block {
-		fmt.Println("block")
 		if err := ac.resetTransport(false); err != nil {
-			fmt.Println(err)
 			if err != errConnClosing {
 				// Tear down ac and delete it from cc.conns.
 				cc.mu.Lock()
@@ -706,7 +689,6 @@ func (cc *ClientConn) resetAddrConn(addr []Address, block bool, tearDownErr erro
 			}
 			return err
 		}
-		fmt.Println("end block")
 		// Start to monitor the error status of transport.
 		go ac.transportMonitor()
 	} else {
@@ -723,7 +705,6 @@ func (cc *ClientConn) resetAddrConn(addr []Address, block bool, tearDownErr erro
 			ac.transportMonitor()
 		}()
 	}
-	fmt.Println("reset successful")
 	return nil
 }
 
@@ -771,7 +752,6 @@ func (cc *ClientConn) getTransport(ctx context.Context, opts BalancerGetOptions)
 			err  error
 		)
 		addr, put, err = cc.dopts.balancer.Get(ctx, opts)
-		fmt.Println("get arrd -------------- ", addr)
 		if err != nil {
 			return nil, nil, toRPCErr(err)
 		}
@@ -784,7 +764,6 @@ func (cc *ClientConn) getTransport(ctx context.Context, opts BalancerGetOptions)
 		cc.mu.RUnlock()
 	}
 	if !ok {
-		fmt.Println("!ok")
 		if put != nil {
 			updateRPCInfoInContext(ctx, rpcInfo{bytesSent: false, bytesReceived: false})
 			put()
@@ -793,14 +772,12 @@ func (cc *ClientConn) getTransport(ctx context.Context, opts BalancerGetOptions)
 	}
 	t, err := ac.wait(ctx, cc.dopts.balancer != nil, !opts.BlockingWait)
 	if err != nil {
-		fmt.Println("err != nil")
 		if put != nil {
 			updateRPCInfoInContext(ctx, rpcInfo{bytesSent: false, bytesReceived: false})
 			put()
 		}
 		return nil, nil, err
 	}
-	fmt.Println("return reset transport")
 	return t, put, nil
 }
 
@@ -919,7 +896,6 @@ func (ac *addrConn) resetTransport(closeTransport bool) error {
 	for retries := 0; ; retries++ {
 		sleepTime := ac.dopts.bs.backoff(retries)
 		connectTime := time.Now()
-		fmt.Println("retries:", retries)
 		for _, addr := range ac.addrs {
 			ac.mu.Lock()
 			ac.printf("connecting")
@@ -951,7 +927,6 @@ func (ac *addrConn) resetTransport(closeTransport bool) error {
 			newTransport, err := transport.NewClientTransport(ctx, sinfo, ac.dopts.copts)
 			// Don't call cancel in success path due to a race in Go 1.6:
 			// https://github.com/golang/go/issues/15078.
-			//			fmt.Println(1, err)
 			if err != nil {
 				cancel()
 
@@ -996,16 +971,13 @@ func (ac *addrConn) resetTransport(closeTransport bool) error {
 				close(ac.ready)
 				ac.ready = nil
 			}
-			//		fmt.Println(3)
 			if ac.cc.dopts.balancer != nil {
 				ac.down = ac.cc.dopts.balancer.Up(addr)
 			}
-			//		fmt.Println(4)
 			ac.curAddr = addr
 			ac.mu.Unlock()
 			return nil
 		}
-		//	fmt.Println(2)
 		timer := time.NewTimer(sleepTime - time.Since(connectTime))
 		select {
 		case <-timer.C:
