@@ -26,6 +26,8 @@ import (
 	"sync"
 	"time"
 
+	"io"
+
 	"golang.org/x/net/context"
 	"golang.org/x/net/trace"
 	"google.golang.org/grpc/credentials"
@@ -75,7 +77,6 @@ type dialOptions struct {
 	unaryInt    UnaryClientInterceptor
 	streamInt   StreamClientInterceptor
 	codec       Codec
-	cp          Compressor
 	dc          Decompressor
 	bs          backoffStrategy
 	balancer    Balancer
@@ -94,6 +95,21 @@ const (
 
 // DialOption configures how we set up the connection.
 type DialOption func(*dialOptions)
+
+//func RegisterDecompressor(name string, f func(io.Reader) (io.ReadCloser, error)) {
+//	 dcFunc[name] = NewGeneralDeCompressor(name, nil, f)
+//}
+
+func RegisterCompressor(name string, f func(io.Writer) io.WriteCloser) {
+	cpFunc[name] = NewGeneralCompressor(name, nil, f)
+}
+
+// WithCompressor returns a DialOption which sets a CompressorGenerator for generating message
+// compressor.
+func WithCompressor(cp Compressor) DialOption {
+	cpFunc["gzip"] = NewGeneralCompressor("gzip", cp, nil)
+	return func(o *dialOptions) {}
+}
 
 // WithInitialWindowSize returns a DialOption which sets the value for initial window size on a stream.
 // The lower bound for window size is 64K and any value smaller than that will be ignored.
@@ -127,14 +143,6 @@ func WithDefaultCallOptions(cos ...CallOption) DialOption {
 func WithCodec(c Codec) DialOption {
 	return func(o *dialOptions) {
 		o.codec = c
-	}
-}
-
-// WithCompressor returns a DialOption which sets a CompressorGenerator for generating message
-// compressor.
-func WithCompressor(cp Compressor) DialOption {
-	return func(o *dialOptions) {
-		o.cp = cp
 	}
 }
 

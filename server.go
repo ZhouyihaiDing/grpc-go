@@ -641,12 +641,12 @@ func (s *Server) removeConn(c io.Closer) {
 	}
 }
 
-func (s *Server) sendResponse(t transport.ServerTransport, stream *transport.Stream, msg interface{}, cp Compressor, opts *transport.Options) error {
+func (s *Server) sendResponse(t transport.ServerTransport, stream *transport.Stream, msg interface{}, cp string, opts *transport.Options) error {
 	var (
 		cbuf       *bytes.Buffer
 		outPayload *stats.OutPayload
 	)
-	if cp != nil {
+	if cp != "" {
 		cbuf = new(bytes.Buffer)
 	}
 	if s.opts.statsHandler != nil {
@@ -802,7 +802,7 @@ func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.
 		Last:  true,
 		Delay: false,
 	}
-	if err := s.sendResponse(t, stream, reply, s.opts.cp, opts); err != nil {
+	if err := s.sendResponse(t, stream, reply, s.opts.cp.Type(), opts); err != nil {
 		if err == io.EOF {
 			// The entire stream is done (for unary RPC only).
 			return err

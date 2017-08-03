@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"math"
@@ -121,6 +122,7 @@ func (d *gzipDecompressor) Type() string {
 
 // callInfo contains all related configuration and information about an RPC.
 type callInfo struct {
+	cpType                string
 	failFast              bool
 	headerMD              metadata.MD
 	trailerMD             metadata.MD
@@ -289,7 +291,7 @@ func (p *parser) recvMsg(maxReceiveMessageSize int) (pf payloadFormat, msg []byt
 
 // encode serializes msg and prepends the message header. If msg is nil, it
 // generates the message header of 0 message length.
-func encode(c Codec, msg interface{}, cp Compressor, cbuf *bytes.Buffer, outPayload *stats.OutPayload) ([]byte, error) {
+func encode(c Codec, msg interface{}, cp string, cbuf *bytes.Buffer, outPayload *stats.OutPayload) ([]byte, error) {
 	var (
 		b      []byte
 		length uint
@@ -307,9 +309,14 @@ func encode(c Codec, msg interface{}, cp Compressor, cbuf *bytes.Buffer, outPayl
 			outPayload.Data = b
 			outPayload.Length = len(b)
 		}
-		if cp != nil {
-			if err := cp.Do(cbuf, b); err != nil {
-				return nil, Errorf(codes.Internal, "grpc: error while compressing: %v", err.Error())
+		currentCp := cpFunc[cp]
+		if cp != "" {
+			if cp == "gzip" {
+				if err := currentCp.Do(cbuf, b); err != nil {
+					return nil, Errorf(codes.Internal, "grpc: error while compressing: %v", err.Error())
+				}
+			} else {
+				fmt.Println("new compressor: ", cp)
 			}
 			b = cbuf.Bytes()
 		}
@@ -327,7 +334,7 @@ func encode(c Codec, msg interface{}, cp Compressor, cbuf *bytes.Buffer, outPayl
 	var buf = make([]byte, payloadLen+sizeLen+len(b))
 
 	// Write payload format
-	if cp == nil {
+	if cp == "" {
 		buf[0] = byte(compressionNone)
 	} else {
 		buf[0] = byte(compressionMade)
