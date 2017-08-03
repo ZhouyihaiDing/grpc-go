@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"math"
@@ -44,30 +45,6 @@ type Compressor interface {
 	Do(w io.Writer, p []byte) error
 	// Type returns the compression algorithm the Compressor uses.
 	Type() string
-
-	getCompressFunc() func(io.Writer) io.WriteCloser
-}
-
-type universalCompressor struct {
-	cpType string
-	cpFunc func(io.Writer) io.WriteCloser
-}
-
-// NewUNIVERSALCompressor creates a Compressor which only getCompressFunc() and Type() are needed.
-func NewUNIVERSALCompressor(name string, f func(io.Writer) io.WriteCloser) Compressor {
-	return &universalCompressor{cpType: name, cpFunc: f}
-}
-
-func (c *universalCompressor) getCompressFunc() func(io.Writer) io.WriteCloser {
-	return c.cpFunc
-}
-
-func (c *universalCompressor) Do(w io.Writer, p []byte) error {
-	return nil
-}
-
-func (c *universalCompressor) Type() string {
-	return c.cpType
 }
 
 type gzipCompressor struct {
@@ -96,12 +73,6 @@ func (c *gzipCompressor) Do(w io.Writer, p []byte) error {
 
 func (c *gzipCompressor) Type() string {
 	return "gzip"
-}
-
-func (c *gzipCompressor) getCompressFunc() func(io.Writer) io.WriteCloser {
-	return func(w io.Writer) io.WriteCloser {
-		return gzip.NewWriter(w)
-	}
 }
 
 // Decompressor defines the interface gRPC uses to decompress a message.
@@ -151,6 +122,7 @@ func (d *gzipDecompressor) Type() string {
 
 // callInfo contains all related configuration and information about an RPC.
 type callInfo struct {
+	cpType                string
 	failFast              bool
 	headerMD              metadata.MD
 	trailerMD             metadata.MD
@@ -319,7 +291,7 @@ func (p *parser) recvMsg(maxReceiveMessageSize int) (pf payloadFormat, msg []byt
 
 // encode serializes msg and prepends the message header. If msg is nil, it
 // generates the message header of 0 message length.
-func encode(c Codec, msg interface{}, cp Compressor, cbuf *bytes.Buffer, outPayload *stats.OutPayload) ([]byte, error) {
+func encode(c Codec, msg interface{}, cp string, cbuf *bytes.Buffer, outPayload *stats.OutPayload) ([]byte, error) {
 	var (
 		b      []byte
 		length uint
@@ -337,18 +309,14 @@ func encode(c Codec, msg interface{}, cp Compressor, cbuf *bytes.Buffer, outPayl
 			outPayload.Data = b
 			outPayload.Length = len(b)
 		}
-		if cp != nil {
-			// var f func(io.Writer)(io.WriteCloser)
-			//if _, isGzipCompressor := cp.(*gzipCompressor); isGzipCompressor {
-			//	f = cp.getCompressFunc()
-			//}
-			f := cp.getCompressFunc()
-			z := f(cbuf)
-			if _, err := z.Write(b); err != nil {
-				return nil, Errorf(codes.Internal, "grpc: error while compressing: %v", err.Error())
-			}
-			if err := z.Close(); err != nil {
-				return nil, Errorf(codes.Internal, "grpc: error while compressing: %v", err.Error())
+		currentCp := cpFunc[cp]
+		if cp != "" {
+			if cp == "gzip" {
+				if err := currentCp.Do(cbuf, b); err != nil {
+					return nil, Errorf(codes.Internal, "grpc: error while compressing: %v", err.Error())
+				}
+			} else {
+				fmt.Println("new compressor: ", cp)
 			}
 			b = cbuf.Bytes()
 		}
@@ -366,7 +334,7 @@ func encode(c Codec, msg interface{}, cp Compressor, cbuf *bytes.Buffer, outPayl
 	var buf = make([]byte, payloadLen+sizeLen+len(b))
 
 	// Write payload format
-	if cp == nil {
+	if cp == "" {
 		buf[0] = byte(compressionNone)
 	} else {
 		buf[0] = byte(compressionMade)

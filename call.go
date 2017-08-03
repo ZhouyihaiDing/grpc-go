@@ -81,7 +81,7 @@ func recvResponse(ctx context.Context, dopts dialOptions, t transport.ClientTran
 }
 
 // sendRequest writes out various information of an RPC such as Context and Message.
-func sendRequest(ctx context.Context, dopts dialOptions, compressor Compressor, c *callInfo, callHdr *transport.CallHdr, stream *transport.Stream, t transport.ClientTransport, args interface{}, opts *transport.Options) (err error) {
+func sendRequest(ctx context.Context, dopts dialOptions, compressor string, c *callInfo, callHdr *transport.CallHdr, stream *transport.Stream, t transport.ClientTransport, args interface{}, opts *transport.Options) (err error) {
 	defer func() {
 		if err != nil {
 			// If err is connection error, t will be closed, no need to close stream here.
@@ -94,7 +94,7 @@ func sendRequest(ctx context.Context, dopts dialOptions, compressor Compressor, 
 		cbuf       *bytes.Buffer
 		outPayload *stats.OutPayload
 	)
-	if compressor != nil {
+	if compressor != "" {
 		cbuf = new(bytes.Buffer)
 	}
 	if dopts.copts.StatsHandler != nil {
@@ -102,7 +102,7 @@ func sendRequest(ctx context.Context, dopts dialOptions, compressor Compressor, 
 			Client: true,
 		}
 	}
-	outBuf, err := encode(dopts.codec, args, compressor, cbuf, outPayload)
+	outBuf, err := encode(dopts.codec, args, c.cpType, cbuf, outPayload)
 	if err != nil {
 		return err
 	}
@@ -218,8 +218,8 @@ func invoke(ctx context.Context, method string, args, reply interface{}, cc *Cli
 			Host:   cc.authority,
 			Method: method,
 		}
-		if cc.dopts.cp != nil {
-			callHdr.SendCompress = cc.dopts.cp.Type()
+		if c.cpType != "" {
+			callHdr.SendCompress = c.cpType
 		}
 		if c.creds != nil {
 			callHdr.Creds = c.creds
@@ -262,7 +262,7 @@ func invoke(ctx context.Context, method string, args, reply interface{}, cc *Cli
 			}
 			return toRPCErr(err)
 		}
-		err = sendRequest(ctx, cc.dopts, cc.dopts.cp, &c, callHdr, stream, t, args, topts)
+		err = sendRequest(ctx, cc.dopts, c.cpType, &c, callHdr, stream, t, args, topts)
 		if err != nil {
 			if put != nil {
 				updateRPCInfoInContext(ctx, rpcInfo{

@@ -137,8 +137,8 @@ func newClientStream(ctx context.Context, desc *StreamDesc, cc *ClientConn, meth
 		// time soon, so we ask the transport to flush the header.
 		Flush: desc.ClientStreams,
 	}
-	if cc.dopts.cp != nil {
-		callHdr.SendCompress = cc.dopts.cp.Type()
+	if c.cpType != "" {
+		callHdr.SendCompress = c.cpType
 	}
 	if c.creds != nil {
 		callHdr.Creds = c.creds
@@ -231,7 +231,7 @@ func newClientStream(ctx context.Context, desc *StreamDesc, cc *ClientConn, meth
 		c:      c,
 		desc:   desc,
 		codec:  cc.dopts.codec,
-		cp:     cc.dopts.cp,
+		cp:     c.cpType,
 		dc:     cc.dopts.dc,
 		cancel: cancel,
 
@@ -246,7 +246,7 @@ func newClientStream(ctx context.Context, desc *StreamDesc, cc *ClientConn, meth
 		statsCtx:     ctx,
 		statsHandler: cc.dopts.copts.StatsHandler,
 	}
-	if cc.dopts.cp != nil {
+	if c.cpType != "" {
 		cs.cbuf = new(bytes.Buffer)
 	}
 	// Listen on ctx.Done() to detect cancellation and s.Done() to detect normal termination
@@ -284,7 +284,7 @@ type clientStream struct {
 	p      *parser
 	desc   *StreamDesc
 	codec  Codec
-	cp     Compressor
+	cp     string
 	cbuf   *bytes.Buffer
 	dc     Decompressor
 	cancel context.CancelFunc
@@ -604,7 +604,7 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 	if ss.statsHandler != nil {
 		outPayload = &stats.OutPayload{}
 	}
-	out, err := encode(ss.codec, m, ss.cp, ss.cbuf, outPayload)
+	out, err := encode(ss.codec, m, ss.cp.Type(), ss.cbuf, outPayload)
 	defer func() {
 		if ss.cbuf != nil {
 			ss.cbuf.Reset()
