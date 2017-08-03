@@ -121,6 +121,7 @@ func (d *gzipDecompressor) Type() string {
 
 // callInfo contains all related configuration and information about an RPC.
 type callInfo struct {
+	cpType                string
 	failFast              bool
 	headerMD              metadata.MD
 	trailerMD             metadata.MD
