@@ -643,16 +643,12 @@ func (s *Server) removeConn(c io.Closer) {
 
 func (s *Server) sendResponse(t transport.ServerTransport, stream *transport.Stream, msg interface{}, cp Compressor, opts *transport.Options) error {
 	var (
-		cbuf       *bytes.Buffer
 		outPayload *stats.OutPayload
 	)
-	if cp != nil {
-		cbuf = new(bytes.Buffer)
-	}
 	if s.opts.statsHandler != nil {
 		outPayload = &stats.OutPayload{}
 	}
-	p, err := encode(s.opts.codec, msg, cp, cbuf, outPayload)
+	p, err := encode(s.opts.codec, msg, cp, outPayload)
 	if err != nil {
 		grpclog.Errorln("grpc: server failed to encode response: ", err)
 		return err
@@ -865,9 +861,6 @@ func (s *Server) processStreamingRPC(t transport.ServerTransport, stream *transp
 		maxSendMessageSize:    s.opts.maxSendMessageSize,
 		trInfo:                trInfo,
 		statsHandler:          sh,
-	}
-	if ss.cp != nil {
-		ss.cbuf = new(bytes.Buffer)
 	}
 	if trInfo != nil {
 		trInfo.tr.LazyLog(&trInfo.firstLine, false)

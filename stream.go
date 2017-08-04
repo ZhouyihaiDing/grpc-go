@@ -19,7 +19,6 @@
 package grpc
 
 import (
-	"bytes"
 	"errors"
 	"io"
 	"sync"
@@ -246,9 +245,6 @@ func newClientStream(ctx context.Context, desc *StreamDesc, cc *ClientConn, meth
 		statsCtx:     ctx,
 		statsHandler: cc.dopts.copts.StatsHandler,
 	}
-	if cc.dopts.cp != nil {
-		cs.cbuf = new(bytes.Buffer)
-	}
 	// Listen on ctx.Done() to detect cancellation and s.Done() to detect normal termination
 	// when there is no pending I/O operations on this stream.
 	go func() {
@@ -285,7 +281,6 @@ type clientStream struct {
 	desc   *StreamDesc
 	codec  Codec
 	cp     Compressor
-	cbuf   *bytes.Buffer
 	dc     Decompressor
 	cancel context.CancelFunc
 
@@ -362,12 +357,7 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 			Client: true,
 		}
 	}
-	out, err := encode(cs.codec, m, cs.cp, cs.cbuf, outPayload)
-	defer func() {
-		if cs.cbuf != nil {
-			cs.cbuf.Reset()
-		}
-	}()
+	out, err := encode(cs.codec, m, cs.cp, outPayload)
 	if err != nil {
 		return err
 	}
@@ -552,7 +542,6 @@ type serverStream struct {
 	codec                 Codec
 	cp                    Compressor
 	dc                    Decompressor
-	cbuf                  *bytes.Buffer
 	maxReceiveMessageSize int
 	maxSendMessageSize    int
 	trInfo                *traceInfo
@@ -604,12 +593,7 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 	if ss.statsHandler != nil {
 		outPayload = &stats.OutPayload{}
 	}
-	out, err := encode(ss.codec, m, ss.cp, ss.cbuf, outPayload)
-	defer func() {
-		if ss.cbuf != nil {
-			ss.cbuf.Reset()
-		}
-	}()
+	out, err := encode(ss.codec, m, ss.cp, outPayload)
 	if err != nil {
 		return err
 	}
