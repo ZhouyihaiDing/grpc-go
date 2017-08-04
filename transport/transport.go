@@ -222,7 +222,6 @@ type Stream struct {
 	method       string
 	recvCompress string
 	sendCompress string
-	compress     string
 	buf          *recvBuffer
 	trReader     io.Reader
 	fc           *inFlow

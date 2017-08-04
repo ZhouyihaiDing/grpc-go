@@ -28,8 +28,6 @@ import (
 	"sync"
 	"time"
 
-	"fmt"
-
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -123,7 +121,6 @@ func (d *gzipDecompressor) Type() string {
 
 // callInfo contains all related configuration and information about an RPC.
 type callInfo struct {
-	cpType                string
 	failFast              bool
 	headerMD              metadata.MD
 	trailerMD             metadata.MD
@@ -294,58 +291,61 @@ func (p *parser) recvMsg(maxReceiveMessageSize int) (pf payloadFormat, msg []byt
 // generates the message header of 0 message length.
 func encode(c Codec, msg interface{}, cp Compressor, outPayload *stats.OutPayload) ([]byte, error) {
 	var (
-		b      []byte
-		length uint
-	)
-	if msg != nil {
-		var err error
-		// TODO(zhaoq): optimize to reduce memory alloc and copying.
-		b, err = c.Marshal(msg)
-		if err != nil {
-			return nil, Errorf(codes.Internal, "grpc: error while marshaling: %v", err.Error())
-		}
-		if outPayload != nil {
-			outPayload.Payload = msg
-			// TODO truncate large payload.
-			outPayload.Data = b
-			outPayload.Length = len(b)
-		}
-		if false {
-			fmt.Println("cp", cp)
-		}
-		if cp != nil {
-			cbuf := new(bytes.Buffer)
-			preAlloc := []byte{0, 0, 0, 0, 0}
-			cbuf.Write(preAlloc)
-			if err := cp.Do(cbuf, b); err != nil {
-				return nil, Errorf(codes.Internal, "grpc: error while compressing: %v", err.Error())
-			}
-			b = cbuf.Bytes()
-			length = uint(len(b))
-			b[0] = byte(compressionMade)
-			binary.BigEndian.PutUint32(b[1:], uint32(length-5))
-			return b, nil
-		}
-		length = uint(len(b))
-	}
-	if length > math.MaxUint32 {
-		return nil, Errorf(codes.ResourceExhausted, "grpc: message too large (%d bytes)", length)
-	}
-
-	const (
+		b          []byte
+		length     uint
 		payloadLen = 1
 		sizeLen    = 4
 	)
+	if msg == nil {
+		var buf = make([]byte, payloadLen+sizeLen)
+		return buf, nil
+	}
 
-	var buf = make([]byte, payloadLen+sizeLen+len(b))
+	var err error
+	// TODO(zhaoq): optimize to reduce memory alloc and copying.
+	b, err = c.Marshal(msg)
+	if err != nil {
+		return nil, Errorf(codes.Internal, "grpc: error while marshaling: %v", err.Error())
+	}
+	if outPayload != nil {
+		outPayload.Payload = msg
+		// TODO truncate large payload.
+		outPayload.Data = b
+		outPayload.Length = len(b)
+	}
 
-	// Write payload format
-	buf[0] = byte(compressionNone)
+	var cbuf *bytes.Buffer
 
-	// Write length of b into buf
-	binary.BigEndian.PutUint32(buf[1:], uint32(length))
-	// Copy encoded msg to buf
-	copy(buf[5:], b)
+	if cp != nil {
+		// pre-alloc place
+		cbuf = bytes.NewBuffer(make([]byte, payloadLen+sizeLen))
+		if err := cp.Do(cbuf, b); err != nil {
+			return nil, Errorf(codes.Internal, "grpc: error while compressing: %v", err.Error())
+		}
+		b = cbuf.Bytes()
+		length = uint(len(b))
+	}
+
+	length = uint(len(b))
+	if length > math.MaxUint32 {
+		return nil, Errorf(codes.ResourceExhausted, "grpc: message too large (%d bytes)", length)
+	}
+	var buf []byte
+	if cp != nil {
+		// re-use b
+		buf = b
+		// Write payload format
+		buf[0] = byte(compressionMade)
+		// Write length of b into buf
+		binary.BigEndian.PutUint32(buf[1:], uint32(length-5))
+	} else {
+		buf = make([]byte, payloadLen+sizeLen+len(b))
+		// Write payload format
+		buf[0] = byte(compressionNone)
+		// Write length of b into buf
+		binary.BigEndian.PutUint32(buf[1:], uint32(length))
+		copy(buf[5:], b)
+	}
 
 	if outPayload != nil {
 		outPayload.WireLength = len(buf)
