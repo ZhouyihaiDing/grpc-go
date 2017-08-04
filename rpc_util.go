@@ -28,6 +28,8 @@ import (
 	"sync"
 	"time"
 
+	"fmt"
+
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -290,7 +292,7 @@ func (p *parser) recvMsg(maxReceiveMessageSize int) (pf payloadFormat, msg []byt
 
 // encode serializes msg and prepends the message header. If msg is nil, it
 // generates the message header of 0 message length.
-func encode(c Codec, msg interface{}, cp Compressor, cbuf *bytes.Buffer, outPayload *stats.OutPayload) ([]byte, error) {
+func encode(c Codec, msg interface{}, cp Compressor, outPayload *stats.OutPayload) ([]byte, error) {
 	var (
 		b      []byte
 		length uint
@@ -308,11 +310,21 @@ func encode(c Codec, msg interface{}, cp Compressor, cbuf *bytes.Buffer, outPayl
 			outPayload.Data = b
 			outPayload.Length = len(b)
 		}
+		if false {
+			fmt.Println("cp", cp)
+		}
 		if cp != nil {
+			cbuf := new(bytes.Buffer)
+			preAlloc := []byte{0, 0, 0, 0, 0}
+			cbuf.Write(preAlloc)
 			if err := cp.Do(cbuf, b); err != nil {
 				return nil, Errorf(codes.Internal, "grpc: error while compressing: %v", err.Error())
 			}
 			b = cbuf.Bytes()
+			length = uint(len(b))
+			b[0] = byte(compressionMade)
+			binary.BigEndian.PutUint32(b[1:], uint32(length-5))
+			return b, nil
 		}
 		length = uint(len(b))
 	}
@@ -328,11 +340,8 @@ func encode(c Codec, msg interface{}, cp Compressor, cbuf *bytes.Buffer, outPayl
 	var buf = make([]byte, payloadLen+sizeLen+len(b))
 
 	// Write payload format
-	if cp == nil {
-		buf[0] = byte(compressionNone)
-	} else {
-		buf[0] = byte(compressionMade)
-	}
+	buf[0] = byte(compressionNone)
+
 	// Write length of b into buf
 	binary.BigEndian.PutUint32(buf[1:], uint32(length))
 	// Copy encoded msg to buf

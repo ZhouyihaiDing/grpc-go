@@ -19,7 +19,6 @@
 package grpc
 
 import (
-	"bytes"
 	"io"
 	"time"
 
@@ -91,18 +90,14 @@ func sendRequest(ctx context.Context, dopts dialOptions, compressor Compressor, 
 		}
 	}()
 	var (
-		cbuf       *bytes.Buffer
 		outPayload *stats.OutPayload
 	)
-	if compressor != nil {
-		cbuf = new(bytes.Buffer)
-	}
 	if dopts.copts.StatsHandler != nil {
 		outPayload = &stats.OutPayload{
 			Client: true,
 		}
 	}
-	outBuf, err := encode(dopts.codec, args, compressor, cbuf, outPayload)
+	outBuf, err := encode(dopts.codec, args, compressor, outPayload)
 	if err != nil {
 		return err
 	}

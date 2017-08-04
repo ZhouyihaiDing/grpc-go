@@ -36,7 +36,7 @@ type generalCompressor struct {
 	writerFunc func(io.Writer) io.WriteCloser
 }
 
-// NewUNIVERSALCompressor extends gzipCompressor with a "type" and "writer function",
+// NewGeneralCompressor extends gzipCompressor with a "type" and "writer function",
 // which can be created by user. "cp" is used for old gizp compressor.
 func NewGeneralCompressor(name string, cp Compressor, f func(io.Writer) io.WriteCloser) Compressor {
 	return &generalCompressor{cpType: name, cp: cp, writerFunc: f}
