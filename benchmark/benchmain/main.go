@@ -107,11 +107,11 @@ func makeFuncUnary(benchFeatures bm.Features) (func(int), func()) {
 	conn := bm.NewClientConn(target, opts...)
 	tc := testpb.NewBenchmarkServiceClient(conn)
 	return func(int) {
-			unaryCaller(tc, benchFeatures.ReqSizeBytes, benchFeatures.RespSizeBytes)
-		}, func() {
-			conn.Close()
-			stopper()
-		}
+		unaryCaller(tc, benchFeatures.ReqSizeBytes, benchFeatures.RespSizeBytes)
+	}, func() {
+		conn.Close()
+		stopper()
+	}
 }
 
 func makeFuncStream(benchFeatures bm.Features) (func(int), func()) {
@@ -147,11 +147,11 @@ func makeFuncStream(benchFeatures bm.Features) (func(int), func()) {
 		streams[i] = stream
 	}
 	return func(pos int) {
-			streamCaller(streams[pos], benchFeatures.ReqSizeBytes, benchFeatures.RespSizeBytes)
-		}, func() {
-			conn.Close()
-			stopper()
-		}
+		streamCaller(streams[pos], benchFeatures.ReqSizeBytes, benchFeatures.RespSizeBytes)
+	}, func() {
+		conn.Close()
+		stopper()
+	}
 }
 
 func unaryCaller(client testpb.BenchmarkServiceClient, reqSize, respSize int) {

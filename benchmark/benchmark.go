@@ -16,6 +16,8 @@
  *
  */
 
+//go:generate protoc -I grpc_testing --go_out=plugins=grpc:grpc_testing grpc_testing/control.proto grpc_testing/messages.proto grpc_testing/payloads.proto grpc_testing/services.proto grpc_testing/stats.proto
+
 /*
 Package benchmark implements the building blocks to setup end-to-end gRPC benchmarks.
 */
@@ -262,7 +264,6 @@ func NewClientConn(addr string, opts ...grpc.DialOption) *grpc.ClientConn {
 func runUnary(b *testing.B, benchFeatures Features) {
 	s := stats.AddStats(b, 38)
 	nw := &latency.Network{Kbps: benchFeatures.Kbps, Latency: benchFeatures.Latency, MTU: benchFeatures.Mtu}
-	b.StopTimer()
 	target, stopper := StartServer(ServerInfo{Addr: "localhost:0", Type: "protobuf", Network: nw}, grpc.MaxConcurrentStreams(uint32(benchFeatures.MaxConcurrentCalls+1)))
 	defer stopper()
 	conn := NewClientConn(
@@ -298,20 +299,19 @@ func runUnary(b *testing.B, benchFeatures Features) {
 			wg.Done()
 		}()
 	}
-	b.StartTimer()
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ch <- i
 	}
-	b.StopTimer()
 	close(ch)
 	wg.Wait()
+	b.StopTimer()
 	conn.Close()
 }
 
 func runStream(b *testing.B, benchFeatures Features) {
 	s := stats.AddStats(b, 38)
 	nw := &latency.Network{Kbps: benchFeatures.Kbps, Latency: benchFeatures.Latency, MTU: benchFeatures.Mtu}
-	b.StopTimer()
 	target, stopper := StartServer(ServerInfo{Addr: "localhost:0", Type: "protobuf", Network: nw}, grpc.MaxConcurrentStreams(uint32(benchFeatures.MaxConcurrentCalls+1)))
 	defer stopper()
 	conn := NewClientConn(
@@ -356,13 +356,13 @@ func runStream(b *testing.B, benchFeatures Features) {
 			wg.Done()
 		}()
 	}
-	b.StartTimer()
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ch <- struct{}{}
 	}
-	b.StopTimer()
 	close(ch)
 	wg.Wait()
+	b.StopTimer()
 	conn.Close()
 }
 func unaryCaller(client testpb.BenchmarkServiceClient, reqSize, respSize int) {
