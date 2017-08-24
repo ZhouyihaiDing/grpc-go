@@ -678,8 +678,15 @@ func (t *http2Client) GracefulClose() error {
 // should proceed only if Write returns nil.
 // TODO(zhaoq): opts.Delay is ignored in this implementation. Support it later
 // if it improves the performance.
-func (t *http2Client) Write(s *Stream, data []byte, opts *Options) error {
-	r := bytes.NewBuffer(data)
+func (t *http2Client) Write(s *Stream, hdr []byte, data []byte, opts *Options) error {
+	secondStart := http2MaxFrameLen - len(hdr)%http2MaxFrameLen
+	if len(data) < secondStart {
+		secondStart = len(data)
+	}
+	hdr = append(hdr, data[:secondStart]...)
+	data = data[secondStart:]
+	isLastSlice := (len(data) == 0)
+	r := bytes.NewBuffer(hdr)
 	var (
 		p   []byte
 		oqv uint32
@@ -721,9 +728,6 @@ func (t *http2Client) Write(s *Stream, data []byte, opts *Options) error {
 			endStream  bool
 			forceFlush bool
 		)
-		if opts.Last && r.Len() == 0 {
-			endStream = true
-		}
 		// Indicate there is a writer who is about to write a data frame.
 		t.framer.adjustNumWriters(1)
 		// Got some quota. Try to acquire writing privilege on the transport.
@@ -763,10 +767,22 @@ func (t *http2Client) Write(s *Stream, data []byte, opts *Options) error {
 			t.writableChan <- 0
 			continue
 		}
-		if r.Len() == 0 && t.framer.adjustNumWriters(0) == 1 {
-			// Do a force flush iff this is last frame for the entire gRPC message
-			// and the caller is the only writer at this moment.
-			forceFlush = true
+		if r.Len() == 0 {
+			if isLastSlice {
+				if opts.Last {
+					endStream = true
+				}
+				if t.framer.adjustNumWriters(0) == 1 {
+					// Do a force flush iff this is last frame for the entire gRPC message
+					// and the caller is the only writer at this moment.
+					forceFlush = true
+				}
+			} else {
+				isLastSlice = true
+				if len(data) != 0 {
+					r = bytes.NewBuffer(data)
+				}
+			}
 		}
 		// If WriteData fails, all the pending streams will be handled
 		// by http2Client.Close(). No explicit CloseStream() needs to be
@@ -955,7 +971,7 @@ func (t *http2Client) handleRSTStream(f *http2.RSTStreamFrame) {
 		warningf("transport: http2Client.handleRSTStream found no mapped gRPC status for the received http2 error %v", f.ErrCode)
 		statusCode = codes.Unknown
 	}
-	s.finish(status.Newf(statusCode, "stream terminated by RST_STREAM with error code: %d", f.ErrCode))
+	s.finish(status.Newf(statusCode, "stream terminated by RST_STREAM with error code: %v", f.ErrCode))
 	s.mu.Unlock()
 	s.write(recvMsg{err: io.EOF})
 }
